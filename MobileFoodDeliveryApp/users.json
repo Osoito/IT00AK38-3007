@@ -1,0 +1,6 @@
+{
+    "1@mail.com": {
+        "password": "password1",
+        "confirmed": false
+    }
+}
