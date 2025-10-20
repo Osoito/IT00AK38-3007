@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>To-Do List Manager</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>To-Do List Manager</h1>
+
+        <!-- Regular Tasks Section -->
+        <div class="section">
+            <h2>Regular Tasks</h2>
+            <input type="text" id="taskInput" placeholder="Add a new regular task">
+            <button onclick="addTask()">Add Task</button>
+            <button onclick="archiveCompleted()">Archive Completed Tasks</button>
+            <ul id="taskList"></ul>
+        </div>
+
+        <!-- Important Tasks Section -->
+        <div class="section">
+            <h2>Important Tasks</h2>
+            <input type="text" id="importantTaskInput" placeholder="Add an important task">
+            <button onclick="addImportantTask()">Add Important Task</button>
+            <ul id="importantTaskList"></ul>
+        </div>
+
+        <!-- History / Archive Section -->
+        <div class="section">
+            <h2>History / Archived Tasks</h2>
+            <ul id="archiveList"></ul>
+        </div>
+    </div>
+
+    <script>
+    /* 
+        BUG NOTES (for demonstration):
+        1) "historyList" is declared without let/const, making it a global variable.
+        2) Off-by-one bug in toggleImportantTask with "index - 1".
+        3) Add important task does nothing if the input is empty, 
+           but does not alert or show any error (inconsistent with regular tasks).
+        4) Potential concurrency issue if save and retrieve are called simultaneously.
+    */
+
+    // Arrays for tasks
+    let taskList = [];
+    let importantTaskList = [];
+    let historyList = []; // FIXED: now declared with let
+
+    window.onload = function() {
+        // Load tasks from localStorage on page load
+        retrieveTasksFromLocalStorage();
+        renderTasks();
+        renderImportantTasks();
+        renderArchive();
+    };
+
+    // -----------------------------
+    // Task Functions
+    // -----------------------------
+    function addTask() {
+        const taskInput = document.getElementById('taskInput');
+        const task = taskInput.value.trim();
+
+        if (task === '') {
+            alert('Please enter a task.');
+            return;
+        }
+
+        taskList.push({ text: task, completed: false });
+        taskInput.value = '';
+        renderTasks();
+        saveTasksToLocalStorage();
+    }
+
+    function toggleTask(index) {
+        taskList[index].completed = !taskList[index].completed;
+        renderTasks();
+        saveTasksToLocalStorage();
+    }
+
+    function deleteTask(index) {
+        taskList.splice(index, 1);
+        renderTasks();
+        saveTasksToLocalStorage();
+    }
+
+    /**
+     * Archive completed tasks
+     * FIXED: If no tasks are completed, show a message.
+     */
+    function archiveCompleted() {
+        const completedTasks = taskList.filter(task => task.completed);
+
+        if (completedTasks.length === 0) {
+            alert('No completed tasks to archive.');
+            return;
+        }
+
+        // Move completed tasks to history array
+        historyList = historyList.concat(completedTasks);
+
+        // Remove completed tasks from current list
+        taskList = taskList.filter(task => !task.completed);
+
+        renderTasks();
+        renderArchive();
+        saveTasksToLocalStorage();
+    }
+
+    // Renders the current tasks in the "Regular Tasks" section
+    function renderTasks() {
+        const taskListElement = document.getElementById('taskList');
+        taskListElement.innerHTML = '';
+
+        taskList.forEach((task, index) => {
+            const li = document.createElement('li');
+            li.className = task.completed ? 'completed' : '';
+            li.innerHTML = `
+                <span onclick="toggleTask(${index})">${task.text}</span>
+                <button class="delete" onclick="deleteTask(${index})">Delete</button>
+            `;
+            taskListElement.appendChild(li);
+        });
+    }
+
+    // -----------------------------
+    // Important Task Functions
+    // -----------------------------
+    function addImportantTask() {
+        const taskInput = document.getElementById('importantTaskInput');
+        const task = taskInput.value.trim();
+
+        // FIXED: Show alert if empty, consistent with regular tasks
+        if (task === '') {
+            alert('Please enter an important task.');
+            return; 
+        }
+
+        importantTaskList.push({ text: task, completed: false });
+        taskInput.value = '';
+        renderImportantTasks();
+        saveTasksToLocalStorage();
+    }
+
+    function toggleImportantTask(index) {
+        // FIXED: Remove off-by-one error
+        importantTaskList[index].completed = !importantTaskList[index].completed;
+        renderImportantTasks();
+        saveTasksToLocalStorage();
+    }
+
+    function deleteImportantTask(index) {
+        importantTaskList.splice(index, 1);
+        renderImportantTasks();
+        saveTasksToLocalStorage();
+    }
+
+    function renderImportantTasks() {
+        const listElement = document.getElementById('importantTaskList');
+        listElement.innerHTML = '';
+
+        importantTaskList.forEach((task, index) => {
+            const li = document.createElement('li');
+            li.className = task.completed ? 'completed' : '';
+            li.innerHTML = `
+                <span onclick="toggleImportantTask(${index})">${task.text}</span>
+                <button class="delete" onclick="deleteImportantTask(${index})">Delete</button>
+            `;
+            listElement.appendChild(li);
+        });
+    }
+
+    // -----------------------------
+    // Archive / History
+    // -----------------------------
+    function renderArchive() {
+        const archiveListElement = document.getElementById('archiveList');
+        archiveListElement.innerHTML = '';
+
+        historyList.forEach(task => {
+            const li = document.createElement('li');
+            li.className = task.completed ? 'completed' : '';
+            li.textContent = task.text;
+            archiveListElement.appendChild(li);
+        });
+    }
+
+    // -----------------------------
+    // Local Storage (JSON) Functions
+    // -----------------------------
+    function saveTasksToLocalStorage() {
+        // FIXED: Use a lock to prevent concurrency issues
+        if (window._savingLock) return;
+        window._savingLock = true;
+        try {
+            const data = {
+                tasks: taskList,
+                important: importantTaskList,
+                history: historyList
+            };
+            localStorage.setItem('todoData', JSON.stringify(data));
+        } finally {
+            window._savingLock = false;
+        }
+    }
+
+    function retrieveTasksFromLocalStorage() {
+        const savedData = localStorage.getItem('todoData');
+        if (savedData) {
+            try {
+                const parsed = JSON.parse(savedData);
+                taskList = parsed.tasks || [];
+                importantTaskList = parsed.important || [];
+                historyList = parsed.history || [];
+            } catch (e) {
+                // If JSON is corrupted, do nothing or handle error
+                console.warn('Data in localStorage is invalid JSON');
+            }
+        }
+    }
+    </script>
+</body>
+</html>

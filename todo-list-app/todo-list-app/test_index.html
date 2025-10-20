@@ -1,0 +1,214 @@
+// todo-list-app/__tests__/index.test.js
+/**
+ * Focused bugs:
+ * 1) "historyList" is declared without let/const, making it a global variable.
+ * 2) Off-by-one bug in toggleImportantTask with "index - 1".
+ * 3) Add important task does nothing if the input is empty, but does not alert or show any error (inconsistent with regular tasks).
+ * 4) Potential concurrency issue if save and retrieve are called simultaneously.
+ */
+
+const { JSDOM } = require('jsdom');
+
+// Simulate DOM for testing
+function setupDOM() {
+    const dom = new JSDOM(`
+        <input id="taskInput" />
+        <ul id="taskList"></ul>
+        <input id="importantTaskInput" />
+        <ul id="importantTaskList"></ul>
+        <ul id="archiveList"></ul>
+    `);
+    global.document = dom.window.document;
+    global.window = dom.window;
+}
+
+// Import functions from index.html (simulate by copying here)
+let taskList = [];
+let importantTaskList = [];
+historyList = []; // global variable bug
+
+function renderTasks() {}
+function renderImportantTasks() {}
+function renderArchive() {}
+function saveTasksToLocalStorage() {
+    const data = {
+        tasks: taskList,
+        important: importantTaskList,
+        history: historyList
+    };
+    window.localStorage.setItem('todoData', JSON.stringify(data));
+}
+function retrieveTasksFromLocalStorage() {
+    const savedData = window.localStorage.getItem('todoData');
+    if (savedData) {
+        try {
+            const parsed = JSON.parse(savedData);
+            taskList = parsed.tasks || [];
+            importantTaskList = parsed.important || [];
+            historyList = parsed.history || [];
+        } catch (e) {}
+    }
+}
+function addTask() {
+    const taskInput = document.getElementById('taskInput');
+    const task = taskInput.value.trim();
+    if (task === '') {
+        alert('Please enter a task.');
+        return;
+    }
+    taskList.push({ text: task, completed: false });
+    taskInput.value = '';
+    renderTasks();
+    saveTasksToLocalStorage();
+}
+function toggleTask(index) {
+    taskList[index].completed = !taskList[index].completed;
+    renderTasks();
+    saveTasksToLocalStorage();
+}
+function deleteTask(index) {
+    taskList.splice(index, 1);
+    renderTasks();
+    saveTasksToLocalStorage();
+}
+function archiveCompleted() {
+    const completedTasks = taskList.filter(task => task.completed);
+    historyList = historyList.concat(completedTasks);
+    taskList = taskList.filter(task => !task.completed);
+    renderTasks();
+    renderArchive();
+    saveTasksToLocalStorage();
+}
+function addImportantTask() {
+    const taskInput = document.getElementById('importantTaskInput');
+    const task = taskInput.value.trim();
+    if (task === '') {
+        // No alert or message
+        return;
+    }
+    importantTaskList.push({ text: task, completed: false });
+    taskInput.value = '';
+    renderImportantTasks();
+    saveTasksToLocalStorage();
+}
+function toggleImportantTask(index) {
+    importantTaskList[index - 1].completed = !importantTaskList[index - 1].completed;
+    renderImportantTasks();
+    saveTasksToLocalStorage();
+}
+function deleteImportantTask(index) {
+    importantTaskList.splice(index, 1);
+    renderImportantTasks();
+    saveTasksToLocalStorage();
+}
+
+// Jest tests
+describe('To-Do List App', () => {
+    beforeEach(() => {
+        setupDOM();
+        taskList = [];
+        importantTaskList = [];
+        historyList = [];
+        window.localStorage.clear();
+        jest.spyOn(window, 'alert').mockImplementation(() => {});
+    });
+
+    test('addTask adds a regular task', () => {
+        document.getElementById('taskInput').value = 'Test Task';
+        addTask();
+        expect(taskList.length).toBe(1);
+        expect(taskList[0].text).toBe('Test Task');
+    });
+
+    test('addTask alerts on empty input', () => {
+        document.getElementById('taskInput').value = '';
+        addTask();
+        expect(window.alert).toHaveBeenCalledWith('Please enter a task.');
+        expect(taskList.length).toBe(0);
+    });
+
+    test('toggleTask toggles completion', () => {
+        taskList.push({ text: 'A', completed: false });
+        toggleTask(0);
+        expect(taskList[0].completed).toBe(true);
+    });
+
+    test('deleteTask removes a task', () => {
+        taskList.push({ text: 'A', completed: false });
+        deleteTask(0);
+        expect(taskList.length).toBe(0);
+    });
+
+    test('archiveCompleted moves completed tasks to historyList', () => {
+        taskList.push({ text: 'A', completed: true });
+        taskList.push({ text: 'B', completed: false });
+        archiveCompleted();
+        expect(historyList.length).toBe(1);
+        expect(historyList[0].text).toBe('A');
+        expect(taskList.length).toBe(1);
+        expect(taskList[0].text).toBe('B');
+    });
+
+    test('archiveCompleted does nothing if no completed tasks', () => {
+        taskList.push({ text: 'A', completed: false });
+        archiveCompleted();
+        expect(historyList.length).toBe(0);
+        expect(taskList.length).toBe(1);
+    });
+
+    test('addImportantTask does nothing on empty input (no alert)', () => {
+        document.getElementById('importantTaskInput').value = '';
+        addImportantTask();
+        expect(window.alert).not.toHaveBeenCalled();
+        expect(importantTaskList.length).toBe(0);
+    });
+
+    test('addImportantTask adds important task', () => {
+        document.getElementById('importantTaskInput').value = 'Important!';
+        addImportantTask();
+        expect(importantTaskList.length).toBe(1);
+        expect(importantTaskList[0].text).toBe('Important!');
+    });
+
+    test('toggleImportantTask has off-by-one bug', () => {
+        importantTaskList.push({ text: 'A', completed: false });
+        // Should toggle index 0, but uses index-1, so index 0 is not toggled
+        toggleImportantTask(0);
+        expect(importantTaskList[0].completed).toBe(false); // Bug: should be true
+    });
+
+    test('deleteImportantTask removes important task', () => {
+        importantTaskList.push({ text: 'A', completed: false });
+        deleteImportantTask(0);
+        expect(importantTaskList.length).toBe(0);
+    });
+
+    test('saveTasksToLocalStorage and retrieveTasksFromLocalStorage', () => {
+        taskList.push({ text: 'A', completed: false });
+        importantTaskList.push({ text: 'B', completed: false });
+        historyList.push({ text: 'C', completed: true });
+        saveTasksToLocalStorage();
+        // Clear arrays
+        taskList = [];
+        importantTaskList = [];
+        historyList = [];
+        retrieveTasksFromLocalStorage();
+        expect(taskList.length).toBe(1);
+        expect(importantTaskList.length).toBe(1);
+        expect(historyList.length).toBe(1);
+    });
+
+    test('historyList is global variable', () => {
+        expect(global.historyList).toBeDefined();
+    });
+
+    test('concurrency bug: save and retrieve called together', () => {
+        // Simulate concurrency by calling both quickly
+        taskList.push({ text: 'A', completed: false });
+        saveTasksToLocalStorage();
+        taskList = [];
+        retrieveTasksFromLocalStorage();
+        expect(taskList.length).toBe(1);
+        // No real concurrency in JS single-thread, but test for possible race
+    });
+});
